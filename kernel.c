@@ -5,6 +5,28 @@ typedef unsigned int uint32_t;
 typedef uint32_t size_t;
 
 extern char __bss[], __bss_end[], __stack_top[];
+extern char __free_ram[], __free_ram_end[];
+
+// this is a bump allocator, meaning the memory pointer is bumped 
+// forward to allocate memory. freeing of memory is not possible in this case 
+// as we don't track allocated blocks of memory
+// to implement a dellocator, we need to use a bitmap based algorithm
+// or buddy system. 
+paddr_t alloc_pages(uint32_t n) {
+  // static means next_paddr's value is retained bw func calls, it is like a global variable
+  // it always points to next allocatable area starting
+  // memory allocation starts from __free_ram 
+  // kernel PANIC if memory allocated is beyond __free_ram_end 
+  static paddr_t next_paddr = (paddr_t) __free_ram;
+  paddr_t paddr = next_paddr;
+  next_paddr += n * PAGE_SIZE;
+
+  if(next_paddr > (paddr_t) __free_ram_end) {
+    PANIC("out of memory");
+  }
+  memset((void*) paddr, 0, n * PAGE_SIZE);
+  return paddr;
+} 
 
 struct sbiret sbi_call(long arg0, long arg1, long arg2, long arg3, long arg4,
                        long arg5, long fid, long eid) {
@@ -118,12 +140,18 @@ void handle_trap(struct trap_frame *f){
 // called immediately after boot() sets up, main kernel code  
 void kernel_main(void) {
   memset(__bss, 0, (size_t) __bss_end - (size_t) __bss);
-  WRITE_CSR(stvec, (uint32_t) kernel_entry);
+  // WRITE_CSR(stvec, (uint32_t) kernel_entry);
   /* unimp translates to csrrw x0, cycle, x0
    since cycle is a read only register, the cpu triggers 
    an illegal instruction exception
   */
-  __asm__ __volatile__("unimp"); // pseudo instruction to trigger exception
+  // __asm__ __volatile__("unimp"); // pseudo instruction to trigger exception
+
+  paddr_t paddr0 = alloc_pages(2);
+  paddr_t paddr1 = alloc_pages(4);
+  printf("alloc_pages test: paddr0=%x\n", paddr0);
+  printf("alloc_pages test: paddr1=%x\n", paddr1);
+  PANIC("booted"); 
 }
 
 
